@@ -630,6 +630,12 @@
           grid-column:2; grid-row:1 / span 7; align-self:center; width:100%; max-width:430px; margin:0 auto;
         }
         body.playing .canvas-box:has(> #slingCanvas){ --res:64px; }
+        /* Stage 2: narrower info column + canvas pinned to the TOP of
+           its column, so the slingshot is on screen and touchable the
+           moment the stage opens (it used to be vertically centred in
+           the tall text column and could sit half below the fold). */
+        body.playing #scr-sling .card{ grid-template-columns:minmax(0,300px) minmax(0,1fr); }
+        body.playing #scr-sling .canvas-box{ align-self:start; }
         body.playing .canvas-box:has(> #carCanvas){ --res:158px; }
         body.playing .canvas-box:has(> #cookCanvas){ --res:64px; }
         body.playing .canvas-box:has(> #balCanvas){ --res:64px; }
@@ -708,6 +714,9 @@
         grid-column:2; grid-row:1 / span 7; align-self:center; width:100%; max-width:430px; margin:0 auto;
       }
       body.css-rotated.playing .canvas-box:has(> #slingCanvas){ --res:64px; }
+      /* Stage 2: same wider, top-pinned slingshot frame as real landscape */
+      body.css-rotated.playing #scr-sling .card{ grid-template-columns:minmax(0,300px) minmax(0,1fr); }
+      body.css-rotated.playing #scr-sling .canvas-box{ align-self:start; }
       body.css-rotated.playing .canvas-box:has(> #carCanvas){ --res:158px; }
       body.css-rotated.playing .canvas-box:has(> #cookCanvas){ --res:64px; }
       body.css-rotated.playing .canvas-box:has(> #balCanvas){ --res:64px; }
@@ -1244,7 +1253,7 @@
             <span class="hud">🌬 Gió: <b id="slingWind">—</b></span>
           </div>
           <div class="canvas-box"><canvas class="game" id="slingCanvas" width="880" height="500"></canvas></div>
-          <div class="game-msg" id="slingMsg">Kéo thau nước về phía sau để lấy đà, rồi thả ra!</div>
+          <div class="game-msg" id="slingMsg">Chạm vào màn hình, kéo ngược sang trái để lấy đà rồi thả ra bắn!</div>
           <div class="btn-row" style="justify-content:center">
             <button class="btn sky" id="slingResetBtn" type="button">↺ Chơi lại màn này</button>
             <button class="btn" id="toCarBtn" type="button" hidden>🚶 Tunr đi theo rồi · Xuống lầu, ra sân lên xe →</button>
@@ -2092,31 +2101,59 @@
     }
     function slingPos(e){
       var r = slingCv.getBoundingClientRect();
+      if (!r.width || !r.height) return { x: SL.anchor.x, y: SL.anchor.y };
       return { x: (e.clientX - r.left) * (880 / r.width), y: (e.clientY - r.top) * (500 / r.height) };
     }
-    slingCv.addEventListener("pointerdown", function(e){
-      if (SL.awake || SL.proj.state !== "ready") return;
-      var p = slingPos(e);
+    /* Touch aim — deliberately forgiving, because on a phone the canvas
+       is small and the old "touch within 95 units of the basin or
+       nothing happens" gate made most drags silently do nothing:
+       · a press ANYWHERE on the canvas starts aiming; once the finger
+         has clearly moved, the basin follows it (pull clamped to 128);
+       · a plain tap (no real drag) just cancels — it never fires;
+       · the release is ALSO listened for on window, and pointer
+         capture is best-effort (try/catch): if a release is ever
+         missed, the stage can no longer wedge in the "drag" state
+         with every later tap ignored. */
+    var SLING_MAX_PULL = 128;
+    function slingPullTo(p){
       var dx = p.x - SL.anchor.x, dy = p.y - SL.anchor.y;
-      if (Math.sqrt(dx*dx+dy*dy) < 95){
-        SL.drag = true; SL.proj.state = "drag";
-        slingCv.setPointerCapture(e.pointerId);
+      var len = Math.sqrt(dx*dx + dy*dy);
+      if (len > SLING_MAX_PULL){ dx *= SLING_MAX_PULL/len; dy *= SLING_MAX_PULL/len; }
+      SL.proj.x = SL.anchor.x + dx; SL.proj.y = SL.anchor.y + dy;
+    }
+    slingCv.addEventListener("pointerdown", function(e){
+      if (SL.awake) return;
+      if (SL.proj.state === "drag" && !SL.drag){
+        // self-heal a stale drag state so the stage can never soft-lock
+        SL.proj.state = "ready"; SL.proj.x = SL.anchor.x; SL.proj.y = SL.anchor.y;
       }
+      if (SL.proj.state !== "ready" || SL.drag) return;
+      if (e.preventDefault) e.preventDefault();
+      var p = slingPos(e);
+      SL.drag = { id: e.pointerId, sx: p.x, sy: p.y, moved: false };
+      try { slingCv.setPointerCapture(e.pointerId); } catch (err) {}
     });
     slingCv.addEventListener("pointermove", function(e){
-      if (!SL.drag) return;
+      if (!SL.drag || e.pointerId !== SL.drag.id) return;
+      if (e.preventDefault) e.preventDefault();
       var p = slingPos(e);
-      var dx = p.x - SL.anchor.x, dy = p.y - SL.anchor.y;
-      var len = Math.sqrt(dx*dx+dy*dy), max = 112;
-      if (len > max){ dx *= max/len; dy *= max/len; }
-      SL.proj.x = SL.anchor.x + dx; SL.proj.y = SL.anchor.y + dy;
+      var mx = p.x - SL.drag.sx, my = p.y - SL.drag.sy;
+      if (!SL.drag.moved && Math.sqrt(mx*mx + my*my) < 8) return;  // still just a tap
+      SL.drag.moved = true;
+      SL.proj.state = "drag";
+      slingPullTo(p);
     });
-    function slingRelease(){
+    function slingRelease(e){
       if (!SL.drag) return;
-      SL.drag = false;
+      if (e && typeof e.pointerId !== "undefined" && e.pointerId !== SL.drag.id) return;
+      var wasDrag = SL.drag.moved && SL.proj.state === "drag";
+      SL.drag = null;
       var p = SL.proj;
+      if (!wasDrag){
+        p.state = "ready"; p.x = SL.anchor.x; p.y = SL.anchor.y; return;
+      }
       var vx = (SL.anchor.x - p.x)*0.24, vy = (SL.anchor.y - p.y)*0.24;
-      if (Math.abs(vx) + Math.abs(vy) < 2.2){
+      if (Math.abs(vx) + Math.abs(vy) < 3.4){
         p.state = "ready"; p.x = SL.anchor.x; p.y = SL.anchor.y; return;
       }
       p.state = "fly"; p.vx = vx; p.vy = vy; p.x = SL.anchor.x; p.y = SL.anchor.y;
@@ -2126,13 +2163,15 @@
     }
     slingCv.addEventListener("pointerup", slingRelease);
     slingCv.addEventListener("pointercancel", slingRelease);
+    window.addEventListener("pointerup", slingRelease);
+    window.addEventListener("pointercancel", slingRelease);
     document.getElementById("slingResetBtn").addEventListener("click", function(){
-      SL.score = 0; SL.shots = 0; SL.awake = false; SL.splashBig = 0;
+      SL.score = 0; SL.shots = 0; SL.awake = false; SL.splashBig = 0; SL.drag = null;
       TUNR_POS.x = 672; slingRollWind();
       SL.proj.state = "ready"; SL.proj.x = SL.anchor.x; SL.proj.y = SL.anchor.y;
       document.getElementById("slingScore").textContent = "0";
       document.getElementById("slingShots").textContent = "0";
-      document.getElementById("slingMsg").textContent = "Kéo thau nước về phía sau để lấy đà, rồi thả ra!";
+      document.getElementById("slingMsg").textContent = "Chạm vào màn hình, kéo ngược sang trái để lấy đà rồi thả ra bắn!";
       document.getElementById("toCarBtn").hidden = true;
       SFX.click();
     });
