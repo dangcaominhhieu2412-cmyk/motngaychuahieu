@@ -594,7 +594,9 @@
         body.playing #scr-world .world-obj{ grid-column:1 / -1; grid-row:1; margin-bottom:6px; }
         body.playing #scr-world .canvas-box{ grid-column:2; grid-row:2; }
         body.playing .canvas-box:has(> #worldCanvas){ --res:118px; }
-        body.playing #scr-world .world-controls{ display:contents; }
+        /* (removed: .world-controls{display:contents} dissolved the control
+           wrapper, dropping the D-pad / E button out of their in-frame
+           overlay — see the LANDSCAPE CONTROLS FIX at the end) */
         body.playing #scr-world .dpad{
           grid-column:1; grid-row:2; align-self:center;
           grid-template-columns:repeat(3,60px); grid-template-rows:repeat(3,60px); gap:5px;
@@ -671,7 +673,9 @@
       body.css-rotated.playing #scr-world .world-obj{ grid-column:1 / -1; grid-row:1; margin-bottom:6px; }
       body.css-rotated.playing #scr-world .canvas-box{ grid-column:2; grid-row:2; }
       body.css-rotated.playing .canvas-box:has(> #worldCanvas){ --res:118px; }
-      body.css-rotated.playing #scr-world .world-controls{ display:contents; }
+      /* (removed: same display:contents trap as the real-landscape block
+         above — it out-specified the in-frame overlay rule and made the
+         D-pad / E button vanish in CSS-rotated mode) */
       body.css-rotated.playing #scr-world .dpad{
         grid-column:1; grid-row:2; align-self:center;
         grid-template-columns:repeat(3,60px); grid-template-rows:repeat(3,60px); gap:5px;
@@ -858,6 +862,54 @@
       }
       body.css-rotated.playing .ctrl-row.in-frame .ctrl-btn{ flex-basis:104px; height:60px; font-size:1.9rem; }
       body.css-rotated.playing .ctrl-row.in-frame .spam-btn{ flex-basis:150px; height:64px; }
+
+      /* ================================================================
+         LANDSCAPE CONTROLS FIX — why the buttons vanished sideways:
+         the short-landscape side-column layouts above set
+         .world-controls{ display:contents }. In the CSS-rotated path
+         that selector (body.css-rotated.playing …, 3 classes) OUT-
+         SPECIFIED the in-frame overlay rule (body …, 2 classes), and
+         in the real-landscape path it tied and fought it. With
+         display:contents the wrapper generates NO box, so its
+         position:absolute never takes effect: the D-pad and the E
+         button fell back into normal flow inside the canvas box,
+         stacked under the canvas, and the playing card's
+         overflow-y:auto clipped them out of the short (~390px)
+         landscape frame — scene visible, buttons gone.
+         Fix: the two display:contents declarations are removed
+         above, and the rules below re-assert the in-frame overlays
+         with selectors at least as specific as every trap, for BOTH
+         landscape paths (real rotation via the media query, forced
+         rotation via body.css-rotated). The world scene also gets a
+         larger height reserve in short frames, so the canvas plus
+         its overlaid D-pad / E button always fits with room to
+         spare instead of sitting exactly on the clip edge.
+         ================================================================ */
+      body.playing #scr-world .canvas-box .world-controls,
+      body.css-rotated.playing #scr-world .canvas-box .world-controls{
+        position:absolute; left:0; right:0; bottom:0; z-index:6;
+        display:flex; justify-content:space-between; align-items:flex-end;
+        margin:0; padding:10px; pointer-events:none; line-height:1.3;
+      }
+      body.playing #scr-world .canvas-box .world-controls > *,
+      body.css-rotated.playing #scr-world .canvas-box .world-controls > *{ pointer-events:auto; }
+      /* Same guarantee for the drive ◀ ▶ and pho-carrying spam rows */
+      body.css-rotated.playing .ctrl-row.in-frame{
+        position:absolute; left:0; right:0; bottom:0; z-index:6;
+        display:flex; justify-content:space-between; align-items:flex-end;
+        margin:0; padding:10px; max-width:none; pointer-events:none; line-height:1.3;
+      }
+      body.css-rotated.playing .ctrl-row.in-frame > *{ pointer-events:auto; }
+      @media (orientation:landscape) and (max-height:620px){
+        body.playing .ctrl-row.in-frame{
+          position:absolute; left:0; right:0; bottom:0; z-index:6;
+          display:flex; justify-content:space-between; align-items:flex-end;
+          margin:0; padding:10px; max-width:none; pointer-events:none; line-height:1.3;
+        }
+        body.playing .ctrl-row.in-frame > *{ pointer-events:auto; }
+        body.playing .canvas-box:has(> #worldCanvas){ --res:132px; }
+      }
+      body.css-rotated.playing .canvas-box:has(> #worldCanvas){ --res:132px; }
     </style>
   </head>
   <body>
