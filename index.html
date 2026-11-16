@@ -910,6 +910,54 @@
         body.playing .canvas-box:has(> #worldCanvas){ --res:132px; }
       }
       body.css-rotated.playing .canvas-box:has(> #worldCanvas){ --res:132px; }
+
+      /* ================================================================
+         ROTATED CONTROLS — FINAL FIX. The user's screenshot (iPhone,
+         host app, CSS-rotated): the scene filled the rotated frame
+         but there was NO D-pad and NO E button — just one lone ▶
+         button peeking in at the frame's edge, so Hiếu could not move
+         at all. Root cause: --app-h kept being reset to the TALL
+         portrait viewport height (the "Bắt đầu ngày mới" handler and
+         the visualViewport listeners call setAppHeight(), which knew
+         nothing about the rotation). The world canvas was therefore
+         sized for an ~844px-tall frame inside the 390px-tall rotated
+         frame; its bottom edge — carrying the overlaid D-pad and E
+         button — landed far below the visible area and was clipped
+         away by the card. setAppHeight() is now rotation-aware (see
+         the script), and the rules below no longer depend on --app-h
+         at all while rotated:
+         1) canvas frames are sized from 100vw — in a portrait
+            viewport that IS the rotated frame's height — so the
+            canvas plus its overlaid controls always fits inside;
+         2) the D-pad gets bigger 60px cells in rotated mode, so the
+            full 4-direction cross is easy to see and tap;
+         3) the system chips stack down the frame's top-right corner
+            and the objective row keeps clear space beside them,
+            instead of the chips lying across the objective text.
+         ================================================================ */
+      @media (orientation:portrait){
+        body.css-rotated.playing .canvas-box{
+          width:min(100%, calc((100vw - var(--res)) * var(--ratio)));
+        }
+      }
+      body.css-rotated.playing #scr-world .dpad{
+        grid-template-columns:repeat(3,60px); grid-template-rows:repeat(3,60px); gap:5px;
+      }
+      body.css-rotated.playing .topbar{ flex-direction:column; align-items:flex-end; }
+      body.css-rotated.playing .world-obj{ padding-right:150px; }
+      @media (orientation:landscape) and (max-height:620px){
+        body.playing .topbar{ flex-direction:column; align-items:flex-end; }
+        body.playing .world-obj{ padding-right:150px; }
+      }
+      /* Narrow portrait phones: the 64px D-pad + 156px E button were
+         ~20px wider than the frame, pushing E past the right edge —
+         shrink both a touch so they sit side by side inside it. */
+      @media (max-width:480px){
+        body.playing:not(.css-rotated) #scr-world .dpad{
+          grid-template-columns:repeat(3,54px); grid-template-rows:repeat(3,54px); gap:5px;
+        }
+        body.playing:not(.css-rotated) #scr-world .interact-btn{ min-width:132px; }
+      }
     </style>
   </head>
   <body>
@@ -3828,6 +3876,16 @@
       function setAppHeight(){
         var h = window.innerHeight;
         if (window.visualViewport && window.visualViewport.height) h = Math.round(window.visualViewport.height);
+        /* CSS-rotated ("Xoay ngang") in a portrait frame: the game frame
+           is rotated 90°, so its height is the phone's WIDTH. Keep
+           --app-h at that width no matter which listener fires —
+           otherwise the tall portrait height leaks back in, the canvas
+           gets sized for a frame ~450px taller than the real one, and
+           the D-pad / E button overlaid on its bottom edge fall outside
+           the visible frame (the "can't move Hiếu" bug). */
+        if (document.body.classList.contains("css-rotated") && window.innerHeight > window.innerWidth){
+          h = window.innerWidth;
+        }
         if (h > 0) document.documentElement.style.setProperty("--app-h", h + "px");
       }
       setAppHeight();
@@ -3876,12 +3934,10 @@
         });
       }
       function applyRotatedHeight(){
-        // In forced landscape the frame's height is the phone's WIDTH.
-        if (isCssRotated() && window.innerHeight > window.innerWidth){
-          document.documentElement.style.setProperty("--app-h", window.innerWidth + "px");
-        } else {
-          setAppHeight();
-        }
+        // setAppHeight() is rotation-aware: while CSS-rotated in a
+        // portrait frame it keeps --app-h at the phone's width, which
+        // is the rotated frame's height.
+        setAppHeight();
       }
       function showRotateHint(){
         if (!rotateHint) return;
